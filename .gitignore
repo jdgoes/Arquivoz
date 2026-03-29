@@ -1,0 +1,48 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── PyInstaller ───────────────────────────────────────────────────────────────
+# Gerados automaticamente pelo build.bat — não pertencem ao repositório
+dist/
+build/
+
+# ── Arquivoz — arquivos gerados em runtime ────────────────────────────────────
+# Ícone gerado automaticamente pelo app na primeira execução
+app/assets/icon.ico
+
+# Cache OCR criado pelo usuário em ~/.arquivoz_cache
+.arquivoz_cache/
+
+# ── Tesseract — modelos de linguagem (binários grandes, ~50 MB) ───────────────
+# Baixados automaticamente pelo instalador — não precisam estar no repositório
+tessdata/eng.traineddata
+tessdata/por.traineddata
+tessdata/pdf.ttf
+
+# ── IDEs e editores ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Ambientes virtuais ────────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+
+# ── Logs e temporários ────────────────────────────────────────────────────────
+*.log
+*.tmp
