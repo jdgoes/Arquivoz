@@ -8,7 +8,6 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Plataforma-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
-![License](https://img.shields.io/badge/Licença-Proprietária-red?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Ativo-2ecc71?style=for-the-badge)
 
 </div>
