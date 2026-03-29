@@ -97,21 +97,37 @@ Transforme PDFs escaneados em documentos com camada de texto, mantendo o visual 
 
 ---
 
+## Download
+
+<div align="center">
+
+[![Download Arquivoz](https://img.shields.io/badge/⬇%20Download%20Arquivoz%20v1.0-2ecc71?style=for-the-badge&logoColor=white)](https://github.com/jdgoes/Arquivoz/releases/tag/Arquivoz-v.1.0)
+
+**[→ github.com/jdgoes/Arquivoz/releases](https://github.com/jdgoes/Arquivoz/releases/tag/Arquivoz-v.1.0)**
+
+Baixe o `ArquivozSetup.exe` na página de releases e siga o instalador.
+
+</div>
+
+---
+
 ## Instalação
 
 ### Opção 1 — Instalador gráfico (recomendado)
 
-1. Certifique-se de ter o **Python 3.10+** instalado e no PATH
-2. Execute o arquivo **`ArquivozSetup.exe`** (ou `setup.pyw` se preferir via Python)
-3. Na tela de boas-vindas, escolha a pasta de instalação (padrão: `AppData\Local\Arquivoz`)
+1. [Baixe o **ArquivozSetup.exe**](https://github.com/jdgoes/Arquivoz/releases/tag/Arquivoz-v.1.0) na página de releases
+2. Certifique-se de ter o **Python 3.10+** instalado e no PATH
+3. Execute o **`ArquivozSetup.exe`**
+4. Na tela de boas-vindas, escolha a pasta de instalação (padrão: `AppData\Local\Arquivoz`)
 4. Leia e aceite os **Termos de Uso**
-5. Clique em **Aceitar e Instalar** — o instalador cuida do resto:
+5. Leia e aceite os **Termos de Uso**
+6. Clique em **Aceitar e Instalar** — o instalador cuida do resto:
    - Copia os arquivos do app para a pasta escolhida
    - Instala todas as dependências Python via pip
    - Baixa e instala o **Tesseract OCR** automaticamente
    - Baixa os modelos de idioma (Português e Inglês)
    - Cria atalhos no **Desktop** e no **Menu Iniciar**
-6. Ao final, clique em **Abrir Arquivoz** para começar a usar
+7. Ao final, clique em **Abrir Arquivoz** para começar a usar
 
 ### Opção 2 — Instalação manual
 
@@ -273,9 +289,7 @@ O Arquivoz **não envia nenhum dado para servidores externos**. Todo o processam
 
 ## Licença
 
-© 2026 Arquivoz. Todos os direitos reservados.
-
-Este software é de uso pessoal e não comercial. Redistribuição, venda ou modificação sem autorização expressa são expressamente vedadas. Consulte os [Termos de Uso](setup.pyw) completos exibidos durante a instalação.
+Distribuído sob a licença **GNU GPL v3** — veja o arquivo [LICENSE](LICENSE) para detalhes.
 
 ---
 
