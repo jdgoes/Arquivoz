@@ -1,4 +1,5 @@
 import os
+import shutil as _shutil
 
 # ── Paletas ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,9 @@ TESSERACT_CANDIDATES = [
     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
     os.path.join(os.environ.get("LOCALAPPDATA", ""), "Tesseract-OCR", "tesseract.exe"),
     os.path.join(_APP_ROOT, "tesseract", "tesseract.exe"),
+    "/usr/bin/tesseract",
+    "/usr/local/bin/tesseract",
+    _shutil.which("tesseract") or "",
 ]
 
 LOCAL_TESSDATA_DIR = os.path.join(_APP_ROOT, "tessdata")

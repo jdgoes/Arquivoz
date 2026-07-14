@@ -10,6 +10,10 @@ import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
+# ── Plataforma ────────────────────────────────────────────────────────────────
+IS_WINDOWS = sys.platform == "win32"
+IS_LINUX   = sys.platform.startswith("linux")
+
 # ── Bootstrap: instala customtkinter se necessário ────────────────────────────
 def _bootstrap():
     try:
@@ -48,17 +52,34 @@ MUTED    = "#7f8c8d"
 ACCENT   = "#3498db"
 ORANGE   = "#e67e22"
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Origem dos arquivos do app (quando frozen, usa sys._MEIPASS)
 if getattr(sys, 'frozen', False):
-    SOURCE_DIR = sys._MEIPASS
+    APP_DIR = os.path.dirname(os.path.abspath(sys.executable))
 else:
-    SOURCE_DIR = APP_DIR
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Caminho padrão de instalação
-DEFAULT_INSTALL = os.path.join(
-    os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Arquivoz")
+if getattr(sys, 'frozen', False):
+    print(f"[INFO] Binário   : {sys.executable}", flush=True)
+    print(f"[INFO] APP_DIR   : {APP_DIR}", flush=True)
+
+if getattr(sys, 'frozen', False) and IS_LINUX:
+    PROJECT_DIR = os.path.dirname(APP_DIR)
+else:
+    PROJECT_DIR = APP_DIR
+
+if getattr(sys, 'frozen', False):
+    SOURCE_DIR  = PROJECT_DIR
+    MEIPASS_DIR = sys._MEIPASS
+    print(f"[INFO] SOURCE_DIR: {SOURCE_DIR}", flush=True)
+else:
+    SOURCE_DIR  = APP_DIR
+    MEIPASS_DIR = APP_DIR
+
+if IS_WINDOWS:
+    DEFAULT_INSTALL = os.path.join(
+        os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Arquivoz")
+else:
+    DEFAULT_INSTALL = os.path.join(
+        os.path.expanduser("~"), ".local", "share", "arquivoz")
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -125,10 +146,10 @@ todos os termos e condições acima estabelecidos.
 """
 
 
-# ── Python executável (sistema) ───────────────────────────────────────────────
+# ── Python executável ─────────────────────────────────────────────────────────
 def _find_system_python() -> str:
-    """Localiza o Python do sistema quando rodando como EXE congelado."""
-    for cmd in ['pythonw', 'python', 'py']:
+    candidates = ['pythonw', 'python', 'py'] if IS_WINDOWS else ['python3', 'python']
+    for cmd in candidates:
         try:
             r = subprocess.run(
                 [cmd, '-c', 'import sys; print(sys.executable)'],
@@ -139,12 +160,31 @@ def _find_system_python() -> str:
             continue
     return 'python'
 
-PYTHON_EXE = sys.executable if not getattr(sys, 'frozen', False) else _find_system_python()
+def _resolve_python_exe() -> str:
+    if not getattr(sys, 'frozen', False):
+        return sys.executable
+    if IS_LINUX:
+        venv = os.environ.get("VIRTUAL_ENV", "")
+        if venv:
+            candidate = os.path.join(venv, "bin", "python")
+            if os.path.exists(candidate):
+                return candidate
+    return _find_system_python()
+
+PYTHON_EXE = _resolve_python_exe()
+
+
+# ── Gerenciador de pacotes Linux ──────────────────────────────────────────────
+def _detect_package_manager() -> str:
+    if shutil.which("pacman"):
+        return "pacman"
+    if shutil.which("apt-get"):
+        return "apt"
+    return "unknown"
 
 
 # ── Helpers de ícone ──────────────────────────────────────────────────────────
 def _resolve_ico() -> str:
-    """Retorna o caminho do .ico, gerando-o da logo se necessário."""
     candidates_ico  = [os.path.join(SOURCE_DIR, "app", "assets", "icon.ico")]
     candidates_logo = [
         os.path.join(SOURCE_DIR, "logo.png"),
@@ -155,7 +195,6 @@ def _resolve_ico() -> str:
         if os.path.exists(p):
             return p
 
-    # Gera o .ico a partir da logo
     for logo in candidates_logo:
         if os.path.exists(logo):
             try:
@@ -172,33 +211,53 @@ def _resolve_ico() -> str:
 
 
 # ── Funções de instalação ─────────────────────────────────────────────────────
-def install_pip_packages(log):
+def install_pip_packages(log, install_dir: str = ""):
     packages = ["customtkinter", "pdfplumber", "pypdf", "Pillow",
                 "pymupdf", "pytesseract"]
     log(f"Instalando {len(packages)} pacotes Python...")
-    result = subprocess.run(
-        [PYTHON_EXE, "-m", "pip", "install"] + packages +
-        ["--quiet", "--no-warn-script-location"],
-        capture_output=True, text=True)
+
+    if IS_LINUX and install_dir:
+        venv_dir = os.path.join(install_dir, ".venv")
+        if not os.path.exists(venv_dir):
+            log(f"  Criando venv em {venv_dir}...")
+            r = subprocess.run([PYTHON_EXE, "-m", "venv", venv_dir],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                log(f"  ERRO ao criar venv: {r.stderr[:200]}")
+                return False
+        pip_exe = os.path.join(venv_dir, "bin", "pip")
+        log(f"  Usando venv: {venv_dir}")
+        cmd = [pip_exe, "install"] + packages + ["--quiet"]
+    else:
+        cmd = [PYTHON_EXE, "-m", "pip", "install"] + packages + ["--quiet", "--no-warn-script-location"]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        log(f"AVISO: {result.stderr[:200]}")
+        log(f"  AVISO: {result.stderr[:200]}")
     else:
         log("  Pacotes Python: OK")
     return result.returncode == 0
 
 
-def find_tesseract():
-    local_appdata = os.environ.get("LOCALAPPDATA", "")
-    candidates = [
-        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        os.path.join(local_appdata, "Tesseract-OCR", "tesseract.exe"),
-        os.path.join(APP_DIR, "tesseract", "tesseract.exe"),
-    ]
+def find_tesseract() -> str:
+    if IS_WINDOWS:
+        local_appdata = os.environ.get("LOCALAPPDATA", "")
+        candidates = [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            os.path.join(local_appdata, "Tesseract-OCR", "tesseract.exe"),
+            os.path.join(APP_DIR, "tesseract", "tesseract.exe"),
+        ]
+    else:
+        candidates = [
+            "/usr/bin/tesseract",
+            "/usr/local/bin/tesseract",
+            shutil.which("tesseract") or "",
+        ]
     for p in candidates:
         if p and os.path.exists(p):
             return p
-    return None
+    return ""
 
 
 def install_tesseract(log):
@@ -207,35 +266,58 @@ def install_tesseract(log):
         log(f"  Tesseract: já instalado")
         return True, os.path.dirname(existing)
 
-    log("  Tesseract não encontrado. Baixando instalador...")
-    installer = os.path.join(os.environ.get("TEMP", APP_DIR), "tess_setup.exe")
-
-    ps_download = (
-        "try {"
-        "  $r = Invoke-RestMethod 'https://api.github.com/repos/UB-Mannheim/tesseract/releases/latest';"
-        "  $a = $r.assets | Where-Object { $_.name -match 'w64-setup.*\\.exe$' } | Select -First 1;"
-        f"  Invoke-WebRequest -Uri $a.browser_download_url -OutFile '{installer}' -UseBasicParsing;"
-        "  Write-Host ('OK:' + $r.tag_name)"
-        "} catch { Write-Host ('ERR:' + $_.Exception.Message) }"
-    )
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_download],
-        capture_output=True, text=True, timeout=180)
-
-    if "ERR:" in result.stdout or not os.path.exists(installer):
-        log("  ERRO: não foi possível baixar o Tesseract.")
-        log("  Baixe manualmente: github.com/UB-Mannheim/tesseract/wiki")
+    if IS_WINDOWS:
+        log("  Tesseract não encontrado. Baixando instalador...")
+        installer = os.path.join(os.environ.get("TEMP", APP_DIR), "tess_setup.exe")
+        ps_download = (
+            "try {"
+            "  $r = Invoke-RestMethod 'https://api.github.com/repos/UB-Mannheim/tesseract/releases/latest';"
+            "  $a = $r.assets | Where-Object { $_.name -match 'w64-setup.*\\.exe$' } | Select -First 1;"
+            f"  Invoke-WebRequest -Uri $a.browser_download_url -OutFile '{installer}' -UseBasicParsing;"
+            "  Write-Host ('OK:' + $r.tag_name)"
+            "} catch { Write-Host ('ERR:' + $_.Exception.Message) }"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_download],
+            capture_output=True, text=True, timeout=180)
+        if "ERR:" in result.stdout or not os.path.exists(installer):
+            log("  ERRO: não foi possível baixar o Tesseract.")
+            log("  Baixe manualmente: github.com/UB-Mannheim/tesseract/wiki")
+            return False, None
+        log("  Instalando Tesseract (aguarde)...")
+        subprocess.run([installer, "/S"], timeout=120)
+        tess_dir = r"C:\Program Files\Tesseract-OCR"
+        if os.path.exists(os.path.join(tess_dir, "tesseract.exe")):
+            log("  Tesseract: instalado com sucesso")
+            return True, tess_dir
+        log("  AVISO: instalação pode ter sido bloqueada.")
         return False, None
 
-    log("  Instalando Tesseract (aguarde)...")
-    subprocess.run([installer, "/S"], timeout=120)
+    else:
+        pkg_manager = _detect_package_manager()
+        log(f"  Gerenciador de pacotes: {pkg_manager}")
 
-    tess_dir = r"C:\Program Files\Tesseract-OCR"
-    if os.path.exists(os.path.join(tess_dir, "tesseract.exe")):
+        if pkg_manager == "pacman":
+            cmd = ["sudo", "pacman", "-S", "--noconfirm",
+                   "tesseract", "tesseract-data-por", "tesseract-data-eng"]
+        elif pkg_manager == "apt":
+            cmd = ["sudo", "apt-get", "install", "-y",
+                   "tesseract-ocr", "tesseract-ocr-por"]
+        else:
+            log("  AVISO: gerenciador de pacotes não reconhecido.")
+            log("    Arch:   sudo pacman -S tesseract tesseract-data-por")
+            log("    Debian: sudo apt install tesseract-ocr tesseract-ocr-por")
+            return False, None
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            log(f"  ERRO ao instalar Tesseract: {result.stderr[:300]}")
+            return False, None
+
+        tess_path = find_tesseract()
+        tess_dir  = os.path.dirname(tess_path) if tess_path else ""
         log("  Tesseract: instalado com sucesso")
         return True, tess_dir
-    log("  AVISO: instalação pode ter sido bloqueada.")
-    return False, None
 
 
 def install_tessdata(tess_dir: str, install_dir: str, log):
@@ -244,7 +326,14 @@ def install_tessdata(tess_dir: str, install_dir: str, log):
     local_tessdata = os.path.join(install_dir, "tessdata")
     os.makedirs(local_tessdata, exist_ok=True)
 
-    system_tessdata = os.path.join(tess_dir, "tessdata") if tess_dir else None
+    if IS_WINDOWS:
+        system_tessdata_candidates = [os.path.join(tess_dir, "tessdata")] if tess_dir else []
+    else:
+        system_tessdata_candidates = [
+            "/usr/share/tessdata",
+            "/usr/local/share/tessdata",
+            os.path.join(tess_dir, "..", "share", "tessdata") if tess_dir else "",
+        ]
 
     urls = {
         "eng": "https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata",
@@ -258,8 +347,10 @@ def install_tessdata(tess_dir: str, install_dir: str, log):
             continue
 
         copied = False
-        if system_tessdata:
-            src = os.path.join(system_tessdata, f"{lang}.traineddata")
+        for sys_td in system_tessdata_candidates:
+            if not sys_td:
+                continue
+            src = os.path.join(sys_td, f"{lang}.traineddata")
             if os.path.exists(src):
                 try:
                     shutil.copy2(src, dest)
@@ -281,7 +372,6 @@ def install_tessdata(tess_dir: str, install_dir: str, log):
 
 
 def copy_app_files(install_dir: str, log) -> bool:
-    """Copia os arquivos do app para o diretório de instalação."""
     try:
         log(f"  Copiando arquivos para: {install_dir}")
         os.makedirs(install_dir, exist_ok=True)
@@ -312,47 +402,88 @@ def copy_app_files(install_dir: str, log) -> bool:
         return False
 
 
-def create_shortcut(target_path: str, shortcut_path: str, working_dir: str,
-                    description: str, icon_path: str = "") -> bool:
-    pythonw = PYTHON_EXE.replace("python.exe", "pythonw.exe")
-    if not os.path.exists(pythonw):
-        pythonw = PYTHON_EXE
-
-    icon_line = f'$s.IconLocation = "{icon_path}";' if icon_path else ""
-    ps = (
-        f'$sh = New-Object -ComObject WScript.Shell;'
-        f'$s = $sh.CreateShortcut("{shortcut_path}");'
-        f'$s.TargetPath = "{pythonw}";'
-        f'$s.Arguments = \'"{target_path}"\';'
-        f'$s.WorkingDirectory = "{working_dir}";'
-        f'$s.Description = "{description}";'
-        f'{icon_line}'
-        f'$s.Save()'
-    )
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
-        capture_output=True)
-    return result.returncode == 0
-
-
 def create_shortcuts(install_dir: str, log):
     main_py   = os.path.join(install_dir, "main.py")
     icon_path = os.path.join(install_dir, "app", "assets", "icon.ico")
 
-    desktop  = os.path.join(os.path.expanduser("~"), "Desktop")
-    shortcut = os.path.join(desktop, "Arquivoz.lnk")
-    if create_shortcut(main_py, shortcut, install_dir, "Arquivoz", icon_path):
-        log("  Atalho Desktop: criado")
-    else:
-        log("  AVISO: não foi possível criar atalho no Desktop.")
+    if IS_WINDOWS:
+        pythonw = PYTHON_EXE.replace("python.exe", "pythonw.exe")
+        if not os.path.exists(pythonw):
+            pythonw = PYTHON_EXE
 
-    start_menu = os.path.join(
-        os.environ.get("APPDATA", ""),
-        "Microsoft", "Windows", "Start Menu", "Programs")
-    if os.path.exists(start_menu):
-        sm_shortcut = os.path.join(start_menu, "Arquivoz.lnk")
-        if create_shortcut(main_py, sm_shortcut, install_dir, "Arquivoz", icon_path):
-            log("  Menu Iniciar: criado")
+        def _make_lnk(shortcut_path):
+            icon_line = f'$s.IconLocation = "{icon_path}";' if icon_path else ""
+            ps = (
+                f'$sh = New-Object -ComObject WScript.Shell;'
+                f'$s = $sh.CreateShortcut("{shortcut_path}");'
+                f'$s.TargetPath = "{pythonw}";'
+                f'$s.Arguments = \'"{main_py}"\';'
+                f'$s.WorkingDirectory = "{install_dir}";'
+                f'$s.Description = "Arquivoz";'
+                f'{icon_line}'
+                f'$s.Save()'
+            )
+            return subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+                capture_output=True).returncode == 0
+
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        if _make_lnk(os.path.join(desktop, "Arquivoz.lnk")):
+            log("  Atalho Desktop: criado")
+        else:
+            log("  AVISO: não foi possível criar atalho no Desktop.")
+
+        start_menu = os.path.join(
+            os.environ.get("APPDATA", ""),
+            "Microsoft", "Windows", "Start Menu", "Programs")
+        if os.path.exists(start_menu):
+            if _make_lnk(os.path.join(start_menu, "Arquivoz.lnk")):
+                log("  Menu Iniciar: criado")
+
+    else:
+        logo_png = os.path.join(install_dir, "logo.png")
+        venv_python = os.path.join(install_dir, ".venv", "bin", "python")
+        launcher_python = venv_python if os.path.exists(venv_python) else PYTHON_EXE
+        entry = (
+            "[Desktop Entry]\n"
+            "Name=Arquivoz\n"
+            "Comment=Gerenciador e conversor de PDFs\n"
+            f"Exec={launcher_python} {main_py}\n"
+            f"Icon={logo_png}\n"
+            "Terminal=false\n"
+            "Type=Application\n"
+            "Categories=Office;Utility;\n"
+            "StartupNotify=true\n"
+        )
+        apps_dir     = os.path.join(os.path.expanduser("~"), ".local", "share", "applications")
+        os.makedirs(apps_dir, exist_ok=True)
+        desktop_file = os.path.join(apps_dir, "arquivoz.desktop")
+        try:
+            with open(desktop_file, "w") as f:
+                f.write(entry)
+            os.chmod(desktop_file, 0o755)
+            log("  Atalho Menu de Aplicativos: criado")
+        except Exception as e:
+            log(f"  AVISO: não foi possível criar .desktop: {e}")
+
+        for desktop_dir in [
+            os.path.join(os.path.expanduser("~"), "Desktop"),
+            os.path.join(os.path.expanduser("~"), "Área de Trabalho"),
+        ]:
+            if os.path.exists(desktop_dir):
+                try:
+                    shutil.copy2(desktop_file, os.path.join(desktop_dir, "arquivoz.desktop"))
+                    os.chmod(os.path.join(desktop_dir, "arquivoz.desktop"), 0o755)
+                    log("  Atalho Desktop: criado")
+                except Exception as e:
+                    log(f"  AVISO: não foi possível criar atalho no Desktop: {e}")
+                break
+
+        try:
+            subprocess.run(["update-desktop-database", apps_dir],
+                           capture_output=True, timeout=10)
+        except Exception:
+            pass
 
 
 # ── Interface do instalador ───────────────────────────────────────────────────
@@ -365,17 +496,18 @@ class InstallerApp(ctk.CTk):
         self.resizable(False, False)
         self.configure(fg_color=DARK_BG)
         self._install_path = DEFAULT_INSTALL
-        # Ícone da janela do instalador
+        self._log_lines = []
         self.after(150, self._apply_window_icon)
         self._build()
 
     def _apply_window_icon(self):
-        ico = _resolve_ico()
-        if ico:
-            try:
-                self.wm_iconbitmap(ico)
-            except Exception:
-                pass
+        if IS_WINDOWS:
+            ico = _resolve_ico()
+            if ico:
+                try:
+                    self.wm_iconbitmap(ico)
+                except Exception:
+                    pass
         logo = next(
             (p for p in [os.path.join(SOURCE_DIR, "logo.png"),
                          os.path.join(SOURCE_DIR, "app", "assets", "logo.png")]
@@ -458,7 +590,6 @@ class InstallerApp(ctk.CTk):
         ctk.CTkLabel(f, text=f"Python detectado: {ver}",
                      text_color=GREEN, font=ctk.CTkFont(size=11)).pack(pady=(6, 0))
 
-        # Seleção de caminho
         path_frame = ctk.CTkFrame(f, fg_color=PANEL_BG, corner_radius=8)
         path_frame.pack(fill="x", pady=(12, 0))
         ctk.CTkLabel(path_frame, text="Pasta de instalação:",
@@ -503,7 +634,9 @@ class InstallerApp(ctk.CTk):
         ctk.CTkLabel(f, text="Leia atentamente antes de continuar.",
                      font=ctk.CTkFont(size=11), text_color=MUTED).pack(pady=(0, 10))
 
-        # Área de texto com scroll
+        bottom = ctk.CTkFrame(f, fg_color="transparent")
+        bottom.pack(side="bottom", fill="x", pady=(10, 0))
+
         txt_frame = tk.Frame(f, bg=ENTRY_BG, bd=0)
         txt_frame.pack(fill="both", expand=True)
 
@@ -520,10 +653,6 @@ class InstallerApp(ctk.CTk):
         txt.configure(state="disabled")
         txt.pack(side="left", fill="both", expand=True)
         sb.config(command=txt.yview)
-
-        # Checkbox de aceite
-        bottom = ctk.CTkFrame(f, fg_color="transparent")
-        bottom.pack(fill="x", pady=(10, 0))
 
         self._accept_var = tk.BooleanVar(value=False)
         self._accept_btn = ctk.CTkButton(
@@ -644,11 +773,15 @@ class InstallerApp(ctk.CTk):
 
         self.after(0, lambda: self._progress_bar.set(1))
         self.after(0, lambda: self._progress_label.configure(text="Concluído!"))
+        self.after(0, lambda: self._write_log_file(all_ok))
         self.after(500, lambda: self._show_done(all_ok))
 
     def _step_copy_files(self) -> bool:
         self.after(0, lambda: self._progress_label.configure(
             text="Copiando arquivos do app..."))
+        self._log(f"[DEBUG] APP_DIR    : {APP_DIR}")
+        self._log(f"[DEBUG] PROJECT_DIR: {PROJECT_DIR}")
+        self._log(f"[DEBUG] SOURCE_DIR : {SOURCE_DIR}")
         if os.path.normpath(SOURCE_DIR) == os.path.normpath(self._install_path):
             self._log("  Instalando no diretório atual: sem cópia necessária")
             return True
@@ -657,7 +790,7 @@ class InstallerApp(ctk.CTk):
     def _step_pip(self) -> bool:
         self.after(0, lambda: self._progress_label.configure(
             text="Instalando pacotes Python..."))
-        return install_pip_packages(self._log)
+        return install_pip_packages(self._log, self._install_path)
 
     def _step_tesseract(self) -> bool:
         self.after(0, lambda: self._progress_label.configure(
@@ -674,6 +807,8 @@ class InstallerApp(ctk.CTk):
         return True
 
     def _log(self, msg: str):
+        print(msg, flush=True)
+        self._log_lines.append(msg)
         def _update():
             self._log_text.configure(state="normal")
             self._log_text.insert("end", msg + "\n")
@@ -681,13 +816,37 @@ class InstallerApp(ctk.CTk):
             self._log_text.configure(state="disabled")
         self.after(0, _update)
 
+    def _write_log_file(self, success: bool):
+        import datetime
+        log_path = os.path.join(
+            os.path.expanduser("~"), "arquivoz_install.log")
+        try:
+            with open(log_path, "w") as f:
+                f.write(f"Arquivoz — Log de Instalação\n")
+                f.write(f"Data   : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Status : {'SUCESSO' if success else 'ERROS'}\n")
+                f.write(f"Python : {PYTHON_EXE}\n")
+                f.write(f"Destino: {self._install_path}\n")
+                f.write("=" * 60 + "\n\n")
+                f.write("\n".join(self._log_lines))
+            print(f"[INFO] Log salvo em: {log_path}", flush=True)
+        except Exception as e:
+            print(f"[WARN] Não foi possível salvar log: {e}", flush=True)
+
     def _launch_app(self):
         self.destroy()
-        main_py  = os.path.join(self._install_path, "main.py")
-        pythonw  = PYTHON_EXE.replace("python.exe", "pythonw.exe")
-        if not os.path.exists(pythonw):
-            pythonw = PYTHON_EXE
-        subprocess.Popen([pythonw, main_py], cwd=self._install_path)
+        main_py = os.path.join(self._install_path, "main.py")
+        if IS_WINDOWS:
+            pythonw = PYTHON_EXE.replace("python.exe", "pythonw.exe")
+            if not os.path.exists(pythonw):
+                pythonw = PYTHON_EXE
+            subprocess.Popen([pythonw, main_py], cwd=self._install_path)
+        else:
+            # Usa o Python do venv ativo (que tem os pacotes instalados)
+            venv_python = os.path.join(self._install_path, ".venv", "bin", "python")
+            if not os.path.exists(venv_python):
+                venv_python = PYTHON_EXE
+            subprocess.Popen([venv_python, main_py], cwd=self._install_path)
 
     def _clear_container(self):
         for w in self._container.winfo_children():
